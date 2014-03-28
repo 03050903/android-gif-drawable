@@ -37,3 +37,4 @@ gradle/
 gradlew*
 
 signing.properties
+.DS_Store

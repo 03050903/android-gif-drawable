@@ -1,17 +1,10 @@
 package pl.droidsonroids.gif;
 
-import java.io.File;
-import java.io.FileDescriptor;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.util.Locale;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.content.res.Resources.NotFoundException;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
@@ -22,6 +15,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.StrictMode;
 import android.widget.MediaController.MediaPlayerControl;
+
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.util.Locale;
 
 /**
  * A {@link Drawable} which can be used to hold GIF images, especially animations.
@@ -35,7 +35,10 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		System.loadLibrary( "gif" );
 	}
 
-	private static native void renderFrame ( int[] pixels, int gifFileInPtr, int[] metaData );
+
+    private static native boolean renderCanvas(Canvas canvas, android.graphics.Paint paint, int gifFileInPtr, int[] metaData);
+
+    private static native boolean isNeedRedraw(int gifFileInPtr, int[] metaData);
 
 	private static native int openFd ( int[] metaData, FileDescriptor fd, long offset );
 
@@ -71,7 +74,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 
 	private static native long getAllocationByteCount ( int gifFileInPtr );
 
-	private static final Handler UI_HANDLER = new Handler( Looper.getMainLooper() );
+	private final Handler UI_HANDLER = new Handler( Looper.getMainLooper() );
 
 	private volatile int mGifInfoPtr;
 	private volatile boolean mIsRunning = true;
@@ -88,11 +91,6 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	 * Paint used to draw on a Canvas
 	 */
 	protected final Paint mPaint = new Paint( Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG );
-	/**
-	 * Frame buffer, holds current frame. 
-	 * Each element is a packed int representing a {@link Color} at the given pixel.
-	 */
-	protected final int[] mColors;
 
 	private final Runnable mResetTask = new Runnable()
 	{
@@ -108,7 +106,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		@Override
 		public void run ()
 		{
-			restoreRemainder( mGifInfoPtr );
+			restoreRemainder(mGifInfoPtr);
 			invalidateSelf();
 		}
 	};
@@ -122,16 +120,16 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		}
 	};
 
-	private final Runnable mInvalidateTask = new Runnable()
+	private Runnable mInvalidateTask = new Runnable()
 	{
 		@Override
 		public void run ()
 		{
-			invalidateSelf();
+            invalidateSelf();
 		}
 	};
 
-	private static void runOnUiThread ( Runnable task )
+	private void runOnUiThread ( Runnable task )
 	{
 		if ( Looper.myLooper() == UI_HANDLER.getLooper() )
 			task.run();
@@ -149,7 +147,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	 */
 	public GifDrawable ( Resources res, int id ) throws NotFoundException, IOException
 	{
-		this( res.openRawResourceFd( id ) );
+		this( res.openRawResourceFd(id) );
 	}
 
 	/**
@@ -178,8 +176,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		if ( filePath == null )
 			throw new NullPointerException( "Source is null" );
 		mInputSourceLength = new File( filePath ).length();
-		mGifInfoPtr = openFile( mMetaData, filePath );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openFile(mMetaData, filePath);
 	}
 
 	/**
@@ -193,8 +190,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		if ( file == null )
 			throw new NullPointerException( "Source is null" );
 		mInputSourceLength = file.length();
-		mGifInfoPtr = openFile( mMetaData, file.getPath() );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openFile(mMetaData, file.getPath());
 	}
 
 	/**
@@ -211,8 +207,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 			throw new NullPointerException( "Source is null" );
 		if ( !stream.markSupported() )
 			throw new IllegalArgumentException( "InputStream does not support marking" );
-		mGifInfoPtr = openStream( mMetaData, stream );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openStream(mMetaData, stream);
 		mInputSourceLength = -1L;
 	}
 
@@ -228,8 +223,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		if ( afd == null )
 			throw new NullPointerException( "Source is null" );
 		FileDescriptor fd = afd.getFileDescriptor();
-		mGifInfoPtr = openFd( mMetaData, fd, afd.getStartOffset() );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openFd(mMetaData, fd, afd.getStartOffset());
 		mInputSourceLength = afd.getLength();
 	}
 
@@ -243,8 +237,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	{
 		if ( fd == null )
 			throw new NullPointerException( "Source is null" );
-		mGifInfoPtr = openFd( mMetaData, fd, 0 );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openFd(mMetaData, fd, 0);
 		mInputSourceLength = -1L;
 	}
 
@@ -259,8 +252,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	{
 		if ( bytes == null )
 			throw new NullPointerException( "Source is null" );
-		mGifInfoPtr = openByteArray( mMetaData, bytes );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
+		mGifInfoPtr = openByteArray(mMetaData, bytes);
 		mInputSourceLength = bytes.length;
 	}
 
@@ -279,7 +271,6 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 		if ( !buffer.isDirect() )
 			throw new IllegalArgumentException( "ByteBuffer is not direct" );
 		mGifInfoPtr = openDirectByteBuffer( mMetaData, buffer );
-		mColors = new int[ mMetaData[ 0 ] * mMetaData[ 1 ] ];
 		mInputSourceLength = buffer.capacity();
 	}
 
@@ -326,7 +317,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	@Override
 	public void setAlpha ( int alpha )
 	{
-		mPaint.setAlpha( alpha );
+		mPaint.setAlpha(alpha);
 	}
 
 	@Override
@@ -390,7 +381,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	 */
 	public String getComment ()
 	{
-		return getComment( mGifInfoPtr );
+		return getComment(mGifInfoPtr);
 	}
 
 	/**
@@ -400,7 +391,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	 */
 	public int getLoopCount ()
 	{
-		return getLoopCount( mGifInfoPtr );
+		return getLoopCount(mGifInfoPtr);
 	}
 
 	/**
@@ -461,7 +452,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	{
 		if ( factor <= 0f )
 			throw new IllegalArgumentException( "Speed factor is not positive" );
-		setSpeedFactor( mGifInfoPtr, factor );
+		setSpeedFactor(mGifInfoPtr, factor);
 	}
 
 	/**
@@ -483,7 +474,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	@Override
 	public int getDuration ()
 	{
-		return getDuration( mGifInfoPtr );
+		return getDuration(mGifInfoPtr);
 	}
 
 	/**
@@ -519,27 +510,6 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 			@Override
 			public void run ()
 			{
-				seekToTime( mGifInfoPtr, position, mColors );
-				invalidateSelf();
-			}
-		} );
-	}
-
-	/**
-	 * Like {@link #seekToTime(int, int, int[])} but uses index of the frame instead of time.
-	 * @param frameIndex index of the frame to seek to (zero based)
-	 * @throws IllegalArgumentException if frameIndex<0
-	 */
-	public void seekToFrame ( final int frameIndex )
-	{
-		if ( frameIndex < 0 )
-			throw new IllegalArgumentException( "frameIndex is not positive" );
-		runOnUiThread( new Runnable()
-		{
-			@Override
-			public void run ()
-			{
-				seekToFrame( mGifInfoPtr, frameIndex, mColors );
 				invalidateSelf();
 			}
 		} );
@@ -625,7 +595,7 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	 */
 	public long getAllocationByteCount ()
 	{
-		return getAllocationByteCount( mGifInfoPtr ) + mColors.length * 4L;
+		return getAllocationByteCount( mGifInfoPtr ) + mMetaData[0] * mMetaData[1] * 4L;
 	}
 
 	/**
@@ -638,41 +608,6 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	public long getInputSourceByteCount ()
 	{
 		return mInputSourceLength;
-	}
-
-	/**
-	 * Returns in pixels[] a copy of the data in the current frame. Each value is a packed int representing a {@link Color}.
-	 * @param pixels the array to receive the frame's colors
-	 * @throws ArrayIndexOutOfBoundsException if the pixels array is too small to receive required number of pixels
-	 */
-	public void getPixels ( int[] pixels )
-	{
-		if ( pixels.length < mColors.length )
-			throw new ArrayIndexOutOfBoundsException( "Pixels array is too small. Required length: " + mColors.length );
-		System.arraycopy( mColors, 0, pixels, 0, mColors.length );
-	}
-
-	/**
-	 * Returns the {@link Color} at the specified location. Throws an exception
-	 * if x or y are out of bounds (negative or >= to the width or height
-	 * respectively). The returned color is a non-premultiplied ARGB value.
-	 *
-	 * @param x    The x coordinate (0...width-1) of the pixel to return
-	 * @param y    The y coordinate (0...height-1) of the pixel to return
-	 * @return     The argb {@link Color} at the specified coordinate
-	 * @throws IllegalArgumentException if x, y exceed the bitmap's bounds
-	 */
-	public int getPixel ( int x, int y )
-	{
-		if ( x < 0 )
-			throw new IllegalArgumentException( "x must be >= 0" );
-		if ( y < 0 )
-			throw new IllegalArgumentException( "y must be >= 0" );
-		if ( x >= mMetaData[ 0 ] )
-			throw new IllegalArgumentException( "x must be < GIF width" );
-		if ( y >= mMetaData[ 1 ] )
-			throw new IllegalArgumentException( "y must be < GIF height" );
-		return mColors[ mMetaData[ 1 ] * y + x ];
 	}
 
 	@Override
@@ -688,28 +623,25 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	@Override
 	public void draw ( Canvas canvas )
 	{
-		if ( mApplyTransformation )
-		{
-			mDstRect.set( getBounds() );
-			mSx = ( float ) mDstRect.width() / mMetaData[ 0 ];
-			mSy = ( float ) mDstRect.height() / mMetaData[ 1 ];
-			mApplyTransformation = false;
-		}
-		if ( mPaint.getShader() == null )
-		{
-			if ( mIsRunning )
-				renderFrame( mColors, mGifInfoPtr, mMetaData );
-			else
-				mMetaData[ 4 ] = -1;
-
-			canvas.scale( mSx, mSy );
-			canvas.drawBitmap( mColors, 0, mMetaData[ 0 ], 0f, 0f, mMetaData[ 0 ], mMetaData[ 1 ], true, mPaint );
-
-			if ( mMetaData[ 4 ] >= 0 && mMetaData[ 2 ] > 1 )
-				UI_HANDLER.postDelayed( mInvalidateTask, mMetaData[ 4 ] );//TODO don't post if message for given frame was already posted
-		}
-		else
-			canvas.drawRect( mDstRect, mPaint );
+//		if ( mApplyTransformation )
+//		{
+//			mDstRect.set( getBounds() );
+//			mApplyTransformation = false;
+//		}
+//		if ( mPaint.getShader() == null )
+//		{
+//			if ( !mIsRunning )
+//				mMetaData[ 4 ] = -1;
+//
+//            renderCanvas(canvas, mPaint, mGifInfoPtr, mMetaData);
+//
+//			if ( mMetaData[ 4 ] >= 0 && mMetaData[ 2 ] > 1 )
+//
+//                scheduleSelf(mInvalidateTask, mMetaData[ 4 ]);
+////				UI_HANDLER.postDelayed( mInvalidateTask, mMetaData[ 4 ] );//TODO don't post if message for given frame was already posted
+//		}
+//		else
+//			canvas.drawRect( mDstRect, mPaint );
 	}
 
 	/**
@@ -751,4 +683,18 @@ public class GifDrawable extends Drawable implements Animatable, MediaPlayerCont
 	{
 		return mMetaData[ 0 ];
 	}
+
+    public boolean renderCanvas(Canvas canvas){
+        if ( !mIsRunning )
+            mMetaData[ 4 ] = -1;
+        return renderCanvas(canvas, mPaint, mGifInfoPtr, mMetaData);
+    }
+
+    public boolean isNeedRedraw(){
+        return isNeedRedraw(mGifInfoPtr, mMetaData);
+    }
+
+    public int getPerTime(){
+        return mMetaData[ 4 ];
+    }
 }

@@ -1,85 +1,4 @@
-#include <jni.h>
-#include <time.h>
-#include <stdio.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <malloc.h>
-
-#include <stdbool.h>
-#include <string.h>
-#include <limits.h>
-#include "giflib/gif_lib.h"
-
-//#include <android/log.h>
-//#define  LOG_TAG    "libgif"
-//#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
-
-#define D_GIF_ERR_NO_FRAMES     	1000
-#define D_GIF_ERR_INVALID_SCR_DIMS 	1001
-#define D_GIF_ERR_INVALID_IMG_DIMS 	1002
-#define D_GIF_ERR_IMG_NOT_CONFINED 	1003
-
-typedef struct
-{
-	uint8_t blue;
-	uint8_t green;
-	uint8_t red;
-	uint8_t alpha;
-} argb;
-
-typedef struct
-{
-	unsigned int duration;
-	short transpIndex;
-	unsigned char disposalMethod;
-} FrameInfo;
-
-typedef struct GifInfo GifInfo;
-typedef int
-(*RewindFunc)(GifInfo *);
-
-struct GifInfo
-{
-	GifFileType* gifFilePtr;
-	unsigned long lastFrameReaminder;
-	unsigned long nextStartTime;
-	int currentIndex;
-	unsigned int lastDrawIndex;
-	FrameInfo* infos;
-	argb* backupPtr;
-	int startPos;
-	unsigned char* rasterBits;
-	char* comment;
-	unsigned short loopCount;
-	int currentLoop;
-	RewindFunc rewindFunc;
-	jfloat speedFactor;
-};
-
-typedef struct
-{
-	JavaVM* jvm;
-	jobject stream;
-	jclass streamCls;
-	jmethodID readMID;
-	jmethodID resetMID;
-	jbyteArray buffer;
-} StreamContainer;
-
-typedef struct
-{
-	JavaVM* jvm;
-	int pos;
-	jbyteArray buffer;
-	jsize arrLen;
-} ByteArrayContainer;
-
-typedef struct
-{
-	int pos;
-	jbyte* bytes;
-	jlong capacity;
-} DirectByteBufferContainer;
+#include "gif.h"
 
 static JavaVM *g_jvm;
 static ColorMapObject* defaultCmap = NULL;
@@ -137,7 +56,7 @@ static void cleanUp(GifInfo* info)
 /**
  * Returns the real time, in ms
  */
-static unsigned long getRealTime(void)
+unsigned long getRealTime(void)
 {
 	struct timespec ts;
 	const clockid_t id = CLOCK_MONOTONIC;
@@ -918,7 +837,7 @@ static inline void disposeFrameIfNeeded(argb* bm, GifInfo* info,
 		memcpy(backup, bm, fGif->SWidth * fGif->SHeight * sizeof(argb));
 }
 
-static void getBitmap(argb* bm, GifInfo* info, JNIEnv * env)
+void getBitmap(argb* bm, GifInfo* info, JNIEnv * env)
 {
 	GifFileType* fGIF = info->gifFilePtr;
 
