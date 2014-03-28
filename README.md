@@ -1,3 +1,7 @@
+## 使用前请注意
+
+这个修改版本只适用于博文 [修复Android多Gif播放占用内存过大导致崩溃问题](http://www.specyci.com/articles/11) 的情况，对于一般情况，请使用原作者提供的代码。并且本代码部分功能已经阉割，部分功能与原作者不同，具体请参考博文分析！
+
 android-gif-drawable [![Build Status](https://travis-ci.org/koral--/android-gif-drawable.png?branch=master)](https://travis-ci.org/koral--/android-gif-drawable)
 ====================
 `View`s and `Drawable` for animated GIFs in Android.
